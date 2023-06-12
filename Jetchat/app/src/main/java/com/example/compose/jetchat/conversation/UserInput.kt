@@ -34,6 +34,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.AnchoredDraggableState
+import androidx.compose.foundation.gestures.DraggableAnchors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -76,12 +78,13 @@ import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,6 +98,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
@@ -110,10 +114,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.compose.jetchat.FunctionalityNotAvailablePopup
 import com.example.compose.jetchat.R
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.delay
 
 enum class InputSelector {
     NONE,
@@ -393,6 +399,8 @@ private fun NotAvailablePopup(onDismissed: () -> Unit) {
 val KeyboardShownKey = SemanticsPropertyKey<Boolean>("KeyboardShownKey")
 var SemanticsPropertyReceiver.keyboardShownProperty by KeyboardShownKey
 
+enum class MessageRecordingValue { Recording, Cancelled }
+
 @OptIn(ExperimentalAnimationApi::class)
 @ExperimentalFoundationApi
 @Composable
@@ -404,8 +412,20 @@ private fun UserInputText(
     onTextFieldFocused: (Boolean) -> Unit,
     focusState: Boolean
 ) {
-    val swipeOffset = remember { mutableStateOf(0f) }
+    val density = LocalDensity.current
     var isRecordingMessage by remember { mutableStateOf(false) }
+    val voiceGestureState = remember(density, isRecordingMessage) {
+        AnchoredDraggableState(
+            initialValue = MessageRecordingValue.Recording,
+            anchors = DraggableAnchors {
+                MessageRecordingValue.Recording at 0f
+                MessageRecordingValue.Cancelled at with(density) { -200.dp.toPx() }
+            },
+            positionalThreshold = { distance -> distance * 0.4f },
+            velocityThreshold = { with(density) { 125.dp.toPx() } },
+            animationSpec = tween()
+        )
+    }
     val a11ylabel = stringResource(id = R.string.textfield_desc)
     Row(
         modifier = Modifier
@@ -426,7 +446,7 @@ private fun UserInputText(
         ) { recording ->
             Box(Modifier.fillMaxSize()) {
                 if (recording) {
-                    RecordingIndicator(swipeOffset)
+                    RecordingIndicator(swipeOffset = { voiceGestureState.offset })
                 } else {
                     UserInputTextField(
                         textFieldValue,
@@ -438,20 +458,37 @@ private fun UserInputText(
                 }
             }
         }
+        LaunchedEffect(voiceGestureState) {
+            snapshotFlow { voiceGestureState.currentValue }
+                .collectLatest { isRecording ->
+                    if (isRecording == MessageRecordingValue.Cancelled) {
+                        isRecordingMessage = false
+                    }
+                }
+        }
+        val scope = rememberCoroutineScope()
         RecordButton(
             recording = isRecordingMessage,
-            swipeOffset = swipeOffset,
             onStartRecording = {
                 val consumed = !isRecordingMessage
                 isRecordingMessage = true
                 consumed
             },
+            onDrag = {
+                voiceGestureState.dispatchRawDelta(it)
+            },
             onFinishRecording = {
                 // handle end of recording
-                isRecordingMessage = false
+                scope.launch {
+                    voiceGestureState.settle(0f)
+                    isRecordingMessage = false
+                }
             },
             onCancelRecording = {
-                isRecordingMessage = false
+                scope.launch {
+                    voiceGestureState.settle(0f)
+                    isRecordingMessage = false
+                }
             },
             modifier = Modifier.fillMaxHeight()
         )
@@ -502,7 +539,7 @@ private fun BoxScope.UserInputTextField(
 }
 
 @Composable
-private fun RecordingIndicator(swipeOffset: State<Float>) {
+private fun RecordingIndicator(swipeOffset: () -> Float) {
     var duration by remember { mutableStateOf(Duration.ZERO) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -554,8 +591,8 @@ private fun RecordingIndicator(swipeOffset: State<Float>) {
                 modifier = Modifier
                     .align(Alignment.Center)
                     .graphicsLayer {
-                        translationX = swipeOffset.value / 2
-                        alpha = 1 - (swipeOffset.value.absoluteValue / swipeThreshold)
+                        translationX = swipeOffset() / 2
+                        alpha = 1 - (swipeOffset().absoluteValue / swipeThreshold)
                     },
                 textAlign = TextAlign.Center,
                 text = stringResource(R.string.swipe_to_cancel_recording),

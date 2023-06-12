@@ -1,3 +1,5 @@
+import java.util.Properties
+
 /*
  * Copyright 2022 The Android Open Source Project
  *
@@ -13,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-val snapshotVersion : String? = System.getenv("COMPOSE_SNAPSHOT_ID")
+val snapshotVersion : String? = System.getenv("COMPOSE_SNAPSHOT_ID") ?: (getLocalProperty("COMPOSE_SNAPSHOT_ID") as String?)
 
 pluginManagement {
     repositories {
@@ -29,7 +31,9 @@ dependencyResolutionManagement {
             println("https://androidx.dev/snapshots/builds/$it/artifacts/repository/") 
             maven { url = uri("https://androidx.dev/snapshots/builds/$it/artifacts/repository/") }
         }
-
+        if (snapshotVersion == null) {
+            error("No snapshot version")
+        }
         google()
         mavenCentral()
     }
@@ -37,3 +41,14 @@ dependencyResolutionManagement {
 rootProject.name = "Jetchat"
 include(":app")
 
+fun getLocalProperty(key: String, file: String = "local.properties"): Any {
+    val properties = java.util.Properties()
+    val localProperties = File(file)
+    if (localProperties.isFile) {
+        java.io.InputStreamReader(java.io.FileInputStream(localProperties), Charsets.UTF_8).use { reader ->
+            properties.load(reader)
+        }
+    } else error("File from not found")
+
+    return properties.getProperty(key)
+}

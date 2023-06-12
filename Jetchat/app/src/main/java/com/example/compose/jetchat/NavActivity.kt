@@ -26,8 +26,15 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.viewinterop.AndroidViewBinding
 import androidx.core.os.bundleOf
 import androidx.core.view.WindowCompat
@@ -37,6 +44,28 @@ import androidx.navigation.fragment.NavHostFragment
 import com.example.compose.jetchat.components.JetchatDrawer
 import com.example.compose.jetchat.databinding.ContentMainBinding
 import kotlinx.coroutines.launch
+
+fun DrawerNestedScrollConnection() = object: NestedScrollConnection {
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+        return super.onPostFling(consumed, available)
+    }
+
+    override fun onPostScroll(
+        consumed: Offset,
+        available: Offset,
+        source: NestedScrollSource
+    ): Offset {
+        return super.onPostScroll(consumed, available, source)
+    }
+
+    override suspend fun onPreFling(available: Velocity): Velocity {
+        return super.onPreFling(available)
+    }
+
+    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+        return super.onPreScroll(available, source)
+    }
+}
 
 /**
  * Main activity for the app.
@@ -82,7 +111,10 @@ class NavActivity : AppCompatActivity() {
                         }
                     }
 
+                    val nestedDragConnection = remember {  }
+
                     JetchatDrawer(
+                        modifier = Modifier.nestedScroll(),
                         drawerState = drawerState,
                         onChatClicked = {
                             findNavController().popBackStack(R.id.nav_home, false)
